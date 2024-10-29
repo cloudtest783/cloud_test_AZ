@@ -1,0 +1,58 @@
+pipeline {
+    agent any
+
+    environment {
+        // Define your environment variables here
+        AZURE_CREDENTIALS = credentials('your-azure-credentials-id')
+        ACR_NAME = 'your-acr-name'
+        ACR_IMAGE = "${ACR_NAME}.azurecr.io/hello-world:latest"
+        AKS_CLUSTER = 'your-aks-cluster-name'
+        AKS_RESOURCE_GROUP = 'your-resource-group'
+        KUBECONFIG = credentials('your-kubeconfig-id')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("${ACR_IMAGE}")
+                }
+            }
+        }
+
+        stage('Push to ACR') {
+            steps {
+                script {
+                    docker.withRegistry("https://${ACR_NAME}.azurecr.io", AZURE_CREDENTIALS) {
+                        docker.image("${ACR_IMAGE}").push()
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to AKS') {
+            steps {
+                script {
+                    withKubeConfig([credentialsId: KUBECONFIG]) {
+                        sh '''
+                        kubectl apply -f k8s/deployment.yaml
+                        kubectl apply -f k8s/service.yaml
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
